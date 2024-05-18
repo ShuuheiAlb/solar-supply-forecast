@@ -1,4 +1,4 @@
-# Supply Forecast in South Australia
+# Solar Supply Forecast in South Australia
 
 This project aims to forecast energy supply from solar photovoltaic (PV) in South Australia. This is my first attempt at exploring Energy and Environmental topic, and may yield useful information to anticipate potential grid volatility.
 
