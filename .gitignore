@@ -4,5 +4,5 @@
 venv/
 
 # Interactively made
-sol_data.csv
-save_model.pkl
+/sol_data.csv
+/save_model.pkl
