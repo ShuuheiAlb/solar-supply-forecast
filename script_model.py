@@ -20,15 +20,16 @@ for name in sol["Name"].unique():
     start_date_idx = sol[sol["Name"] == name].index[0]
     est_date_idx = sol[(sol["Name"] == name) & (sol["Energy"] > 0)].index[0]
     sol.drop(index = list(range(start_date_idx, est_date_idx)), inplace=True)
+
 # Preview plot
-for name in sol["Name"].unique():
+"""for name in sol["Name"].unique():
     plt.close()
     df = sol[sol["Name"] == name]
     df.loc[:, 'Date'] = pd.to_datetime(df["Date"], yearfirst=True).dt.strftime('%m/%y') # only change format for this loop
     df.plot(x='Date', y='Energy', label=name)
     plt.title("Solar PV Generated Energy")
     plt.legend()
-    plt.show()
+    plt.show()"""
 
 #%%
 
@@ -55,13 +56,10 @@ models = [Naive(), SeasonalNaive(365), RandomWalkWithDrift(), WindowAverage(7), 
           AutoTheta(), AutoETS(), AutoARIMA(), CrostonOptimized()]
 sf = StatsForecast(models, freq="D", df=sol_sf)
 
-#%%
-
-# Potentially an alternative basic model: "stabilised" seasonal avg
+# ?Potentially an alternative basic model: "stabilised" seasonal avg
 def seasonal_recent_model(df):
     gap = 365
     return (df.iloc[(len(df)-gap-3):(len(df)-gap+3), ]["Energy"].mean() + df.iloc[len(df)-1, ]["Energy"])/2
-
 
 # %%
 
@@ -98,7 +96,7 @@ cv_sol_sf["h"] = (cv_sol_sf["ds"] - cv_sol_sf["cutoff"]).dt.days
 cv_sol_sf["EnsembleBaseline"] = cv_sol_sf.loc[:, "Naive":"WindowAverage"].mean(axis=1)
 cv_sol_sf["EnsembleAll"] = cv_sol_sf.loc[:, "Naive":"CrostonOptimized"].mean(axis=1)
 
-print(cv_sol_sf)
+"""print(cv_sol_sf)"""
 
 #%%
 
@@ -124,7 +122,7 @@ def evaluate_cross_validation(df, metrics): #Simplify soon?
 
 # AIC, BIC soon
 error_sol_sf = evaluate_cross_validation(cv_sol_sf, [mape, mse]) # ignore SeasonalNaive when 0
-print(error_sol_sf)
+"""print(error_sol_sf)"""
 
 #%%
 
@@ -140,7 +138,7 @@ preds = final[final["best_model"] == final["variable"]] \
             .rename(columns = {"value": "y"})
 hists = sol_sf
 
-print(preds)
+"""print(preds)"""
 
 # %%
 

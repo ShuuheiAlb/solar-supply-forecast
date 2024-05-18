@@ -1,0 +1,8 @@
+
+# Hidden data
+.ipynb_checkpoints/
+venv/
+
+# Interactively made
+sol_data.csv
+save_model.pkl
