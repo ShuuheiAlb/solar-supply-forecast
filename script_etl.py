@@ -45,8 +45,8 @@ def exploratory_test():
 
 # Check if we can create a database
 # SOON: sqlite3
-csv_path = "/home/rotisayabundar/Downloads/shuuheialb.github.io/projects/sa-solar-supply/sol_data.csv"
-db_path = "/home/rotisayabundar/Downloads/shuuheialb.github.io/projects/sa-solar-supply/sol_data.db"
+csv_path = "data/sol_data.csv"
+db_path = "data/sol_data.db"
 if not isfile(csv_path):
     try:
         # Compile station list

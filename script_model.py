@@ -13,7 +13,7 @@ from utilsforecast.losses import mse
 #DATA = pd.read_csv("sol_data.csv")
 #TEST = DATA[-round(0.1*len(DATA)):] # watch out for the missing exog data
 #sol = DATA[:-round(0.1*len(DATA))]
-sol = pd.read_csv("sol_data.csv")
+sol = pd.read_csv("data/sol_data.csv")
 
 # Select the data from establishment dates (actually should be in ETL)
 for name in sol["Name"].unique():
@@ -22,7 +22,7 @@ for name in sol["Name"].unique():
     sol.drop(index = list(range(start_date_idx, est_date_idx)), inplace=True)
 
 # Preview plot
-"""for name in sol["Name"].unique():
+_ = """for name in sol["Name"].unique():
     plt.close()
     df = sol[sol["Name"] == name]
     df.loc[:, 'Date'] = pd.to_datetime(df["Date"], yearfirst=True).dt.strftime('%m/%y') # only change format for this loop
@@ -38,8 +38,8 @@ for name in sol["Name"].unique():
 from statsforecast import StatsForecast
 from statsforecast.models import Naive, SeasonalNaive, RandomWalkWithDrift, WindowAverage, \
                                  AutoTheta, AutoETS, AutoARIMA, CrostonOptimized
-from mlforecast import MLForecast
-from lightgbm import LGBMRegressor # potentially?
+#from mlforecast import MLForecast
+#from lightgbm import LGBMRegressor # potentially?
 
 h = 3
 
@@ -78,17 +78,17 @@ ds_count_limit = 500
 sol_sf_filter = sol_sf["unique_id"].isin(ds_counts[ds_counts > ds_count_limit].index)
 sol_sf_long = sol_sf[sol_sf_filter]
 sol_sf_short = sol_sf[-sol_sf_filter]
-if not isfile("save_model.pkl"):
+if not isfile("data/save_model.pkl"):
     # combined cv results
     cv_sol_sf_long = sf.cross_validation(df=sol_sf_long, h=h, n_windows=5, step_size = 100) \
                         .reset_index()
     cv_sol_sf_short = sf.cross_validation(df=sol_sf_short, h=h, n_windows=5, step_size = 10) \
                         .reset_index()
     cv_sol_sf = pd.concat([cv_sol_sf_long, cv_sol_sf_short])
-    with open('save_model.pkl', 'wb') as outp:
+    with open('data/save_model.pkl', 'wb') as outp:
         pickle.dump(cv_sol_sf, outp, pickle.HIGHEST_PROTOCOL)
 else:
-    with open('save_model.pkl', 'rb') as inp:
+    with open('data/save_model.pkl', 'rb') as inp:
         cv_sol_sf = pickle.load(inp)
 
 # Ensemble result
@@ -96,7 +96,7 @@ cv_sol_sf["h"] = (cv_sol_sf["ds"] - cv_sol_sf["cutoff"]).dt.days
 cv_sol_sf["EnsembleBaseline"] = cv_sol_sf.loc[:, "Naive":"WindowAverage"].mean(axis=1)
 cv_sol_sf["EnsembleAll"] = cv_sol_sf.loc[:, "Naive":"CrostonOptimized"].mean(axis=1)
 
-"""print(cv_sol_sf)"""
+#print(cv_sol_sf)
 
 #%%
 
@@ -122,7 +122,7 @@ def evaluate_cross_validation(df, metrics): #Simplify soon?
 
 # AIC, BIC soon
 error_sol_sf = evaluate_cross_validation(cv_sol_sf, [mape, mse]) # ignore SeasonalNaive when 0
-"""print(error_sol_sf)"""
+#print(error_sol_sf)
 
 #%%
 
@@ -138,42 +138,38 @@ preds = final[final["best_model"] == final["variable"]] \
             .rename(columns = {"value": "y"})
 hists = sol_sf
 
-"""print(preds)"""
+#print(preds)
 
 # %%
 
 # === Basic visualisation
 
+import streamlit as st
 import plotly.graph_objects as go
-import plotly.io as pio
-pio.renderers.default = "plotly_mimetype+notebook_connected"
+#import plotly.io as pio
+#pio.renderers.default = "plotly_mimetype+notebook_connected"
 
+st.title("Solar Supply Forecast in South Australia")
+
+curr_loc = st.selectbox(
+   "Location code",
+   sorted(sol["Name"].unique()),
+   index=0,
+   placeholder="Select"
+)
 def sol_points(unique_id):
     curr_hists = hists[hists["unique_id"] == unique_id]
     curr_preds = preds[preds["unique_id"] == unique_id]
     return(dict(x = [curr_hists["ds"][-60:-h], curr_hists["ds"][-(h+1):], pd.concat([curr_hists["ds"][-(h+1):-h], curr_preds["ds"]])],
                 y = [curr_hists["y"][-60:-h], curr_hists["y"][-(h+1):], pd.concat([curr_hists["y"][-(h+1):-h], curr_preds["y"]])],
                 visible = True))
-
-curr_loc = "ADP"
 curr_sol_points = sol_points(curr_loc)
+
 fig = go.Figure()
 fig.add_trace(go.Scatter(x = curr_sol_points["x"][0], y = curr_sol_points["y"][0], mode='lines', name = "Historic"))
 fig.add_trace(go.Scatter(x = curr_sol_points["x"][1], y = curr_sol_points["y"][1], mode='lines', name = "Actual"))
 fig.add_trace(go.Scatter(x = curr_sol_points["x"][2], y = curr_sol_points["y"][2], mode='lines', name = "Forecast"))
-fig.update_layout(barmode = 'overlay', template = "plotly_white")
-fig.update_layout(
-    updatemenus = [dict(direction = "down",
-                        buttons = [dict(args=[sol_points(loc)],
-                                        label=loc,
-                                        method="restyle") for loc in sol["Name"].unique()],
-                        pad = {"r": 10, "t": 10}, showactive =True,
-                        x = 0.11, xanchor="left", y = 1.1, yanchor = "top")]
-)
-
-# %%
-
-import streamlit as st
+fig.update_layout(barmode = 'overlay', template = "plotly_white", yaxis_title = "Energy (MW)")
 
 st.plotly_chart(fig, use_container_width=True)
 # %%
