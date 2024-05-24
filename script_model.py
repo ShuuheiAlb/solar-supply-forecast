@@ -10,10 +10,10 @@ from utilsforecast.evaluation import evaluate
 from utilsforecast.losses import mse
 
 # Import data, set aside 10% based on forward-chain
-#DATA = pd.read_csv("sol_data.csv")
+#DATA = pd.read_csv("etl_out.csv")
 #TEST = DATA[-round(0.1*len(DATA)):] # watch out for the missing exog data
 #sol = DATA[:-round(0.1*len(DATA))]
-sol = pd.read_csv("data/sol_data.csv")
+sol = pd.read_csv("data/etl_out.csv")
 
 # Select the data from establishment dates (actually should be in ETL)
 for name in sol["Name"].unique():
@@ -38,8 +38,7 @@ _ = """for name in sol["Name"].unique():
 from statsforecast import StatsForecast
 from statsforecast.models import Naive, SeasonalNaive, RandomWalkWithDrift, WindowAverage, \
                                  AutoTheta, AutoETS, AutoARIMA, CrostonOptimized
-#from mlforecast import MLForecast
-#from lightgbm import LGBMRegressor # potentially?
+#from mlforecast import MLForecast # LGBM potentially?
 
 h = 3
 
@@ -56,7 +55,7 @@ models = [Naive(), SeasonalNaive(365), RandomWalkWithDrift(), WindowAverage(7), 
           AutoTheta(), AutoETS(), AutoARIMA(), CrostonOptimized()]
 sf = StatsForecast(models, freq="D", df=sol_sf)
 
-# ?Potentially an alternative basic model: "stabilised" seasonal avg
+# ?Potentially an alternative basic cv_obj: "stabilised" seasonal avg
 def seasonal_recent_model(df):
     gap = 365
     return (df.iloc[(len(df)-gap-3):(len(df)-gap+3), ]["Energy"].mean() + df.iloc[len(df)-1, ]["Energy"])/2
@@ -78,17 +77,17 @@ ds_count_limit = 500
 sol_sf_filter = sol_sf["unique_id"].isin(ds_counts[ds_counts > ds_count_limit].index)
 sol_sf_long = sol_sf[sol_sf_filter]
 sol_sf_short = sol_sf[-sol_sf_filter]
-if not isfile("data/save_model.pkl"):
+if not isfile("data/cv_obj.pkl"):
     # combined cv results
     cv_sol_sf_long = sf.cross_validation(df=sol_sf_long, h=h, n_windows=5, step_size = 100) \
                         .reset_index()
     cv_sol_sf_short = sf.cross_validation(df=sol_sf_short, h=h, n_windows=5, step_size = 10) \
                         .reset_index()
     cv_sol_sf = pd.concat([cv_sol_sf_long, cv_sol_sf_short])
-    with open('data/save_model.pkl', 'wb') as outp:
+    with open('data/cv_obj.pkl', 'wb') as outp:
         pickle.dump(cv_sol_sf, outp, pickle.HIGHEST_PROTOCOL)
 else:
-    with open('data/save_model.pkl', 'rb') as inp:
+    with open('data/cv_obj.pkl', 'rb') as inp:
         cv_sol_sf = pickle.load(inp)
 
 # Ensemble result
@@ -116,7 +115,7 @@ def evaluate_cross_validation(df, metrics): #Simplify soon?
             eval_['h'] = h
             evals.append(eval_)
     evals = pd.concat(evals)
-    evals = evals.groupby(["unique_id", "metric", "h"]).mean(numeric_only=True) # Averages the error metrics for all cutoffs for every combination of model and unique_id
+    evals = evals.groupby(["unique_id", "metric", "h"]).mean(numeric_only=True) # Averages the error metrics for all cutoffs for every combination of cv_obj and unique_id
     evals['best_model'] = evals.idxmin(axis=1)
     return evals.reset_index()
 
@@ -126,6 +125,7 @@ error_sol_sf = evaluate_cross_validation(cv_sol_sf, [mape, mse]) # ignore Season
 
 #%%
 
+# ! The best model for unique_id, h should be saved and then prediction remade
 # Collect final predictions: STILLSOMESSY
 
 final = cv_sol_sf[cv_sol_sf["cutoff"] == max(cv_sol_sf["cutoff"].unique())]
@@ -137,12 +137,19 @@ preds = final[final["best_model"] == final["variable"]] \
             .sort_values(by = ["unique_id", "ds"]) \
             .rename(columns = {"value": "y"})
 hists = sol_sf
-
 #print(preds)
+
+#if not isfile("data/model_out.pkl"):
+#    with open('data/model_out.pkl', 'rb') as inp:
+#        cv_sol_sf = pickle.load(inp)
 
 # %%
 
 # === Basic visualisation
+
+# !! 1. Mark if the upper bound is really small, cs higher visual gap
+# !! 2. Give location names (check json_parser)
+# !! 3. Routine update?
 
 import streamlit as st
 import plotly.graph_objects as go
@@ -150,6 +157,9 @@ import plotly.graph_objects as go
 #pio.renderers.default = "plotly_mimetype+notebook_connected"
 
 st.title("Solar Supply Forecast in South Australia")
+
+with open("style.css") as css:
+    st.markdown( f'<style>{css.read()}</style>' , unsafe_allow_html= True)
 
 curr_loc = st.selectbox(
    "Location code",
@@ -165,10 +175,14 @@ def sol_points(unique_id):
                 visible = True))
 curr_sol_points = sol_points(curr_loc)
 
+AZURE = "#069af3"
+GREEN = "#15b01a"
+ROSE = "#cf6275"
+MAUVE = "#ae7181"
 fig = go.Figure()
-fig.add_trace(go.Scatter(x = curr_sol_points["x"][0], y = curr_sol_points["y"][0], mode='lines', name = "Historic"))
-fig.add_trace(go.Scatter(x = curr_sol_points["x"][1], y = curr_sol_points["y"][1], mode='lines', name = "Actual"))
-fig.add_trace(go.Scatter(x = curr_sol_points["x"][2], y = curr_sol_points["y"][2], mode='lines', name = "Forecast"))
+fig.add_trace(go.Scatter(x = curr_sol_points["x"][0], y = curr_sol_points["y"][0], mode='lines', name = "Historic", line={"color": AZURE}))
+fig.add_trace(go.Scatter(x = curr_sol_points["x"][1], y = curr_sol_points["y"][1], mode='lines', name = "Actual", line={"color": GREEN}))
+fig.add_trace(go.Scatter(x = curr_sol_points["x"][2], y = curr_sol_points["y"][2], mode='lines', name = "Forecast", line={"color": MAUVE, "dash": 'dot'}))
 fig.update_layout(barmode = 'overlay', template = "plotly_white", yaxis_title = "Energy (MW)")
 
 st.plotly_chart(fig, use_container_width=True)
