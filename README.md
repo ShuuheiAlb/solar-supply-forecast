@@ -8,4 +8,4 @@ A simple Steamlit visualisation is presented [here](https://shuuheialb-solar-sup
 
 ## How to Run
 
-Run `script_etl.py` then run `script_model.py`. The ETL and modelling may take some time (~0.5 min and 5 mins respectively).
+Run `script_etl.py` then run `script_model.py`. The ETL and modelling may take some time (~0.5 min and 7-8 mins respectively).

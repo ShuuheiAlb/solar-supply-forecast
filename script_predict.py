@@ -1,5 +1,8 @@
 #%%
 
+# # Collect model
+# ! The best model for unique_id, h should be saved and then prediction remade
+#
 
 with open('data/model.pkl', 'rb') as inp:
     cv_sol_sf = pickle.load(inp)
@@ -50,15 +53,12 @@ def sol_points(unique_id):
                 visible = True))
 curr_sol_points = sol_points(curr_loc)
 
-AZURE = "#069af3"
-GREEN = "#15b01a"
-ROSE = "#cf6275"
-MAUVE = "#ae7181"
+YELLOW = "#e6ba72"
+GREEN = "#c1c87a"
 fig = go.Figure()
-fig.add_trace(go.Scatter(x = curr_sol_points["x"][0], y = curr_sol_points["y"][0], mode='lines', name = "Historic", line={"color": AZURE}))
-fig.add_trace(go.Scatter(x = curr_sol_points["x"][1], y = curr_sol_points["y"][1], mode='lines', name = "Actual", line={"color": GREEN}))
-fig.add_trace(go.Scatter(x = curr_sol_points["x"][2], y = curr_sol_points["y"][2], mode='lines', name = "Forecast", line={"color": MAUVE, "dash": 'dot'}))
+fig.add_trace(go.Scatter(x = curr_sol_points["x"][0], y = curr_sol_points["y"][0], mode='lines', name = "Historic", line={"color": YELLOW}))
+fig.add_trace(go.Scatter(x = curr_sol_points["x"][1], y = curr_sol_points["y"][1], mode='lines', name = "Actual", line={"color": YELLOW, "dash": 'dot'}))
+fig.add_trace(go.Scatter(x = curr_sol_points["x"][2], y = curr_sol_points["y"][2], mode='lines', name = "Forecast", line={"color": GREEN}))
 fig.update_layout(barmode = 'overlay', template = "plotly_white", yaxis_title = "Energy (MW)")
 
 st.plotly_chart(fig, use_container_width=True)
-# %%
