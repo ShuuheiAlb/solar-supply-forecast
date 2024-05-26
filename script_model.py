@@ -32,9 +32,10 @@ _ = """for name in sol["Name"].unique():
 
 from statsforecast import StatsForecast
 from statsforecast.models import Naive, WindowAverage, AutoETS, AutoARIMA, CrostonOptimized
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from mlforecast import MLForecast # LGBM potentially?
 import lightgbm as lgb
-from mlforecast.target_transforms import Differences
+from statsforecast.utils import ConformalIntervals
 
 # Change header for modelling library
 sol_sf = sol[["Name", "Date", "Energy", "Temperature", "Solar Irradiance"]] \
@@ -49,7 +50,7 @@ models = [Naive(), WindowAverage(7), AutoETS(), AutoARIMA(), CrostonOptimized()]
 ml_models = [lgb.LGBMRegressor(verbosity=-1)]
 
 sf = StatsForecast(models, freq="D", df=sol_sf)
-mlf = mlf = MLForecast(ml_models, freq="D") #Difference lag SOOON
+mlf = MLForecast(ml_models, freq="D") #Difference lag SOOON
 
 
 # %%
@@ -57,9 +58,10 @@ mlf = mlf = MLForecast(ml_models, freq="D") #Difference lag SOOON
 # === Cross-validation
 # For simplicity, load the objects from Pickle
 # Hypothesis:
-# * BNGSF1, BNGSF2, TBSF has lots of data and forms seasonality. Model: ARIMA, Ensemble
-# * HVWW, MWPS, PAREPW is a bit shorter but also lots of data. Model: ARIMA, Ensemble
-# * BOLIVAR, ADP: scale-dependent; MBPS2, MAPS2, TB2SF are pretty new
+# * BNGSF1, BNGSF2, TBSF, MWPS are > 4 yrs with annual seasonality. Model: ARIMA, Ensemble
+# * HVWW (2w), PAREPW is 1-2 yrs (very volatile). Model: ARIMA, Ensemble
+# ===
+# * BOLIVAR, ADP: sudden active time; MAPS2 == MANN new; MBPS2, TB2SF as an addition to main
 # * CBWWBA: wtf
 
 h = 7
@@ -72,7 +74,8 @@ if not isfile("data/cv_obj.pkl"):
         # Separated based on short vs long time series
         step = 90 if len(sol_) > ds_limit else 30
         n_windows = min(np.floor(len(sol_)/step).astype(int), 10)
-        cv_ = sf.cross_validation(df=sol_, h=h, n_windows=n_windows, step_size=step).reset_index()
+        intervals = ConformalIntervals(h=h, n_windows=n_windows)
+        cv_ = sf.cross_validation(df=sol_, h=h, n_windows=n_windows, step_size=step, level=[90], prediction_intervals=intervals).reset_index()
         cvs.append(cv_)
     cvs = pd.concat(cvs)
     cvs["h"] = (cvs["ds"] - cvs["cutoff"]).dt.days
@@ -146,10 +149,10 @@ import plotly.graph_objects as go
 #import plotly.io as pio
 #pio.renderers.default = "plotly_mimetype+notebook_connected"
 
-st.title("Solar Supply Forecast in South Australia")
-
 with open("style.css") as css:
     st.markdown( f'<style>{css.read()}</style>' , unsafe_allow_html= True)
+
+st.title("Solar Supply Forecast in South Australia")
 
 curr_loc = st.selectbox(
    "Location code",
