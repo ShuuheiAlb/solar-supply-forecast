@@ -4,9 +4,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from os.path import isfile
-import pickle
-
 # Import data, no set aside test data (let the real data shows it)
 sol = pd.read_csv("data/etl_out.csv")
 
@@ -16,23 +13,17 @@ for name in sol["Name"].unique():
     est_date_idx = sol[(sol["Name"] == name) & (sol["Energy"] > 0)].index[0]
     sol.drop(index = list(range(start_date_idx, est_date_idx)), inplace=True)
 
-# Preview plot
-_ = """for name in sol["Name"].unique():
-    plt.close()
-    df = sol[sol["Name"] == name]
-    df.loc[:, 'Date'] = pd.to_datetime(df["Date"], yearfirst=True).dt.strftime('%m/%y') # only change format for this loop
-    df.plot(x='Date', y='Energy', label=name)
-    plt.title("Solar PV Generated Energy")
-    plt.legend()
-    plt.show()"""
-
 #%%
 
 # === Model
+# SOON
+# 1. AutoARIMAx (trend break etc) with rolling windows frame
+# 2. LightGBM with feature engineering: X_(t-p), time since the incident?
+# 3. TBATS?
 
 from statsforecast import StatsForecast
-from statsforecast.models import Naive, WindowAverage, AutoETS, AutoARIMA, CrostonOptimized
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsforecast.models import Naive, WindowAverage, AutoARIMA, AutoETS, CrostonOptimized
+# TBATS?
 from mlforecast import MLForecast # LGBM potentially?
 import lightgbm as lgb
 from statsforecast.utils import ConformalIntervals
@@ -52,17 +43,16 @@ ml_models = [lgb.LGBMRegressor(verbosity=-1)]
 sf = StatsForecast(models, freq="D", df=sol_sf)
 mlf = MLForecast(ml_models, freq="D") #Difference lag SOOON
 
+# === Plot
+#sf.plot(sol_sf[["unique_id", "ds", "y"]])
 
 # %%
 
 # === Cross-validation
 # For simplicity, load the objects from Pickle
-# Hypothesis:
-# * BNGSF1, BNGSF2, TBSF, MWPS are > 4 yrs with annual seasonality. Model: ARIMA, Ensemble
-# * HVWW (2w), PAREPW is 1-2 yrs (very volatile). Model: ARIMA, Ensemble
-# ===
-# * BOLIVAR, ADP: sudden active time; MAPS2 == MANN new; MBPS2, TB2SF as an addition to main
-# * CBWWBA: wtf
+
+from os.path import isfile
+import pickle
 
 h = 7
 ds_limit = 500
@@ -120,14 +110,11 @@ errors = evaluate_cv(cvs.drop('SeasonalNaive', axis=1), [mape, mse])
 
 #%%
 
-# Collect model
 # ! The best model for unique_id, h should be saved and then prediction remade
-# But the specifics of the model like p,q should also be recorded
+#   But the specifics of the model like p,q should also be recorded
 #   not sure if Nixtla saves them from
 
 hists = sol_sf
-
-# Wait, the last cutoff is like for each unique_id
 final = cvs[cvs["cutoff"] == cvs.groupby("unique_id")["cutoff"].transform(max)]
 final = final.merge(errors[errors['metric'] == "mse"][["unique_id", "best_model", "h"]], \
                     on=["unique_id", "h"], how="outer")
@@ -137,8 +124,6 @@ preds = final[final["best_model"] == final["variable"]] \
             .sort_values(by = ["unique_id", "ds"]) \
             .rename(columns = {"value": "y"})
 #print(preds)
-
-
 
 # %%
 
