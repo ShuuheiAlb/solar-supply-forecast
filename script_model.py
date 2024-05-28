@@ -12,39 +12,56 @@ for name in sol["Name"].unique():
     start_date_idx = sol[sol["Name"] == name].index[0]
     est_date_idx = sol[(sol["Name"] == name) & (sol["Energy"] > 0)].index[0]
     sol.drop(index = list(range(start_date_idx, est_date_idx)), inplace=True)
+# Convert date string to date object
+sol["Date"] = pd.to_datetime(sol["Date"])
 
 #%%
 
-# === Model
-# SOON
-# 1. AutoARIMAx (trend break etc) with rolling windows frame
-# 2. LightGBM with feature engineering: X_(t-p), time since the incident?
-# 3. TBATS?
+# === Exploratory Plot
 
 from statsforecast import StatsForecast
-from statsforecast.models import Naive, WindowAverage, AutoARIMA, AutoETS, CrostonOptimized
-# TBATS?
-from mlforecast import MLForecast # LGBM potentially?
-import lightgbm as lgb
-from statsforecast.utils import ConformalIntervals
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
 # Change header for modelling library
-sol_sf = sol[["Name", "Date", "Energy", "Temperature", "Solar Irradiance"]] \
-                .replace("", np.nan).dropna() \
+sol_nixtla = sol.replace("", np.nan).dropna() \
                 .rename(columns = {
                     "Name": "unique_id",
                     "Date": "ds",
                     "Energy": "y"
                 })
+StatsForecast.plot(sol_nixtla)
 
-models = [Naive(), WindowAverage(7), AutoETS(), AutoARIMA(), CrostonOptimized()]
+#df = sol_nixtla[sol_nixtla["unique_id"] == "BNGSF1", "y"]
+#plot_acf(df, lags=90) # find total lags: mostly less than 60
+#plot_pacf(df, lags=50) # find differences
+
+#%%
+
+# === Model
+# SOON
+# 1. AutoARIMAx (trend break etc) with rolling windows frame 60
+# 2. LightGBM with feature engineering: X_(t-p), time since the incident?
+# 3. TBATS?
+
+# from statsforecast import StatsForecast
+from statsforecast.models import Naive, WindowAverage, AutoARIMA, AutoETS, CrostonOptimized
+from mlforecast import MLForecast
+import lightgbm as lgb
+import re
+from mlforecast.target_transforms import Differences
+
+# Modelling objects
+sf_models = [Naive(), WindowAverage(7), AutoETS(), AutoARIMA(), CrostonOptimized()]
 ml_models = [lgb.LGBMRegressor(verbosity=-1)]
 
-sf = StatsForecast(models, freq="D", df=sol_sf)
-mlf = MLForecast(ml_models, freq="D") #Difference lag SOOON
+sf = StatsForecast(sf_models, freq="D", fallback_model=Naive())
+mlf = MLForecast(ml_models, freq="D", target_transforms=[Differences([11])],
+                 lags=range(1, 20), date_features=["month"]) #seems working well with BNGSF
 
-# === Plot
-#sf.plot(sol_sf[["unique_id", "ds", "y"]])
+# Preprocessing datasets differently
+sol_sf = pd.DataFrame(sol_nixtla)[["unique_id", "ds", "y", "Temperature", "Solar Irradiance"]]
+sol_mlf = pd.DataFrame(sol_nixtla).rename(columns = lambda x:re.sub('[^A-Za-z0-9_]+', '', x))
+# prep = sf.preprocess(df)
 
 # %%
 
@@ -57,18 +74,19 @@ import pickle
 h = 7
 ds_limit = 500
 if not isfile("data/cv_obj.pkl"):
-    # Nixtla's results
+    # Manual cvs to allow integration of various models
+    # Check: arima_string(sf.fitted_[0,0].model_)
     cvs = []
     for unique_id in sol_sf["unique_id"].unique():
         sol_ = sol_sf[sol_sf["unique_id"] == unique_id]
         # Separated based on short vs long time series
         step = 90 if len(sol_) > ds_limit else 30
         n_windows = min(np.floor(len(sol_)/step).astype(int), 10)
-        intervals = ConformalIntervals(h=h, n_windows=n_windows)
-        cv_ = sf.cross_validation(df=sol_, h=h, n_windows=n_windows, step_size=step, level=[90], prediction_intervals=intervals).reset_index()
+        cv_ = sf.cross_validation(df=sol_, h=h, n_windows=n_windows, step_size=step).reset_index()
         cvs.append(cv_)
     cvs = pd.concat(cvs)
     cvs["h"] = (cvs["ds"] - cvs["cutoff"]).dt.days
+    
     # Ensemble result
     cvs["EnsembleFreaky"] = (cvs["AutoARIMA"] + cvs["WindowAverage"])/2
     cvs["EnsembleAll"] = cvs.loc[:, "Naive":"CrostonOptimized"].mean(axis=1)
@@ -105,7 +123,7 @@ def evaluate_cv(df, metrics): #Simplify soon?
     return evals.reset_index()
 
 # The Auto function has been based on grid search using AIC so AIC/BIC not included
-errors = evaluate_cv(cvs.drop('SeasonalNaive', axis=1), [mape, mse])
+errors = evaluate_cv(cvs, [mape, mse])
 #print(errors)
 
 #%%
@@ -124,6 +142,27 @@ preds = final[final["best_model"] == final["variable"]] \
             .sort_values(by = ["unique_id", "ds"]) \
             .rename(columns = {"value": "y"})
 #print(preds)
+
+
+#%% ML TRY
+from mlforecast.auto import AutoLightGBM, AutoMLForecast
+def evaluate(df, group):
+    results = []
+    for model in df.columns.drop(['unique_id', 'ds']):
+        model_res = M4Evaluation.evaluate(
+            'data', group, df[model].to_numpy().reshape(-1, horizon)
+        )
+        model_res.index = [model]
+        results.append(model_res)
+    return pd.concat(results).T.round(2)
+
+auto_mlf = AutoMLForecast(models={'lgb': AutoLightGBM()}, freq="D", season_length=365)
+#auto_mlf.fit(sol_mlf,
+#    n_windows=10, h=7, num_samples=5,  # number of trials to run
+#)
+#preds = auto_mlf.predict(h)
+#preds = preds.rename(columns = {"lgb": "y"})
+
 
 # %%
 
