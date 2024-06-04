@@ -30,6 +30,11 @@ def open_meteo_response(path, params={}):
     response = requests.get(url, params=params)
     return response
 
+def open_meteo_forecast_response(path, params={}):
+    url = "https://api.open-meteo.com/v1/forecast" + path
+    response = requests.get(url, params=params)
+    return response
+
 # For debug
 def json_print(data):
     print(json.dumps(data, indent=2))
@@ -45,9 +50,8 @@ def exploratory_test():
 #%%
 
 # Check if we can create a database
-# SOON: sqlite3
 csv_path = "data/etl_out.csv"
-db_path = "data/etl_out.db"
+db_path = "data/etl_out.db" # SOON: sqlite3
 if isfile(csv_path):
     print(f"File {csv_path} already exists")
 else:
@@ -105,9 +109,18 @@ else:
                 "daily": "temperature_2m_mean,shortwave_radiation_sum",
                 "timezone": "Europe/London"
             }
+            forecast_params = {"latitude": station_loc_record["lat"],
+                "longitude": station_loc_record["lng"],
+                "daily": "temperature_2m_max,temperature_2m_min,shortwave_radiation_sum",
+                "timezone": "Europe/London"
+            }
+            # SOON: forecast days for OpenMeteo
             weather_data = open_meteo_response("", params).json()["daily"]
             mean_temps = weather_data["temperature_2m_mean"]
             tot_rads = weather_data["shortwave_radiation_sum"]
+            weather_forecast_data = open_meteo_forecast_response("", forecast_params).json()["daily"]
+            forecast_mean_temps = (weather_forecast_data["temperature_2m_min"] + weather_forecast_data["temperature_2m_max"])/2 # lol
+            forecast_tot_rads = weather_forecast_data["shortwave_radiation_sum"]
 
             # Create the energy supply for station
             station_supply_df = pd.DataFrame({"Name": [station_code] * len(station_supply_array),
