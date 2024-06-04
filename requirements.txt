@@ -1,10 +1,12 @@
+lightgbm==4.3.0
 matplotlib==3.7.5
+mlforecast==0.13.0
 numpy==1.24.4
+numpy==1.17.4
 pandas==2.0.3
 plotly==5.18.0
-Requests==2.32.2
-statsforecast==1.6.0
-mlforecast
-lightgbm
+Requests==2.32.3
+statsforecast==1.7.5
+statsmodels==0.14.0
 streamlit==1.34.0
-utilsforecast==0.0.24
+utilsforecast==0.1.10

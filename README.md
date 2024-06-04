@@ -27,3 +27,7 @@ Python library [Nixtla's StatsForecast](https://nixtlaverse.nixtla.io/statsforec
 The current cross validation implementation is a simple forward chain, with 30-day steps (i.e. monthly) for shorter series and 90-day steps (i.e. quarter yearly) for longer series.
 
 More ideas can be read at [the Jupyter's version here](https://nbviewer.org/github/ShuuheiAlb/solar-supply-forecast/blob/main/nb.ipynb).
+
+## Other tools used
+
+VS Code Notebook, pipreqs
