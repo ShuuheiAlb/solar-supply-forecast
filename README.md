@@ -14,17 +14,28 @@ Data is collected with [OpenNEM API](https://opennem.org.au/) and [Open Meteo AP
 
 ## Methodology
 
-Data is modelled under:
+These models are considered:
 
-1. Benchmark model: naive, 7-days-window average, Exponential Smoothing
+1. Benchmark model: naive, 7-day window average, Triple Exponential Smoothing
 
-2. SARIMAx with exogenous variables such as temperature and solar irrandiance. Also Croston's method.
+2. Statistical models:
 
-3. LightGBM with temporal features  (still on the way)
+a. Seasonal Autoregressive Integrated Moving Average with exogenous variables (SARIMAx), i.e. temperature (averaged) and solar irradiance
 
-Python library [Nixtla's StatsForecast](https://nixtlaverse.nixtla.io/statsforecast/) is borrowed for these functions.
+b. Croston's method
+
+3. Machine learning models: LightGBM, XGBoost
+
+These models are not considered:
+
+1. LSTM. Its associated Python library `TensorFlow` ideally requires an additional CuDA GUI requirement which is currently unavailable in Author's device.
+
+
+Python library [StatsForecast and MLForecast by Nixtla](https://nixtlaverse.nixtla.io/) is borrowed for these functions.
 
 The current cross validation implementation is a simple forward chain, with 30-day steps (i.e. monthly) for shorter series and 90-day steps (i.e. quarter yearly) for longer series.
+
+
 
 More ideas can be read at [the Jupyter's version here](https://nbviewer.org/github/ShuuheiAlb/solar-supply-forecast/blob/main/tmp/nb.ipynb).
 

@@ -10,25 +10,30 @@ sol = pd.read_csv(lib.etl_out_path)
 # Convert date string to date object
 sol["Date"] = pd.to_datetime(sol["Date"])
 
-# Separate data: junk data since establishment date, historical data, questioned data
+# Separate data: questioned data, meaningful historical data
+hist_sub_sols = []
+quest_sub_sols = []
 for name in sol["Name"].unique():
     sub_sol = sol[sol["Name"] == name].sort_values(by="Date")
-    # SOON
-    junk_start_idx = sub_sol.index[0]
-    junk_end_idx = sub_sol[sub_sol["Energy"] > 0].index[0]
-    hist_sub_sol = sub_sol.drop(index = list(range(junk_start_idx, junk_end_idx)))
-    quest_sub_sol =  sub_sol[-lib.h:]
+    quest_sub_sol =  sub_sol.iloc[-lib.h:]
+    quest_sub_sols.append(quest_sub_sol)
+    estb_time_idx = sub_sol[sub_sol["Energy"] > 0].index[0]
+    hist_sub_sol = sub_sol.loc[estb_time_idx:].iloc[:-lib.h]
+    hist_sub_sols.append(hist_sub_sol)
+    print(name, len(hist_sub_sol))
+sol_hist = pd.concat(hist_sub_sols)
+sol_quest = pd.concat(hist_sub_sols)
 
 #%%
 
 # === Exploratory Plot
 
+#import matplotlib.pyplot as plt
 from statsforecast import StatsForecast
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-#import matplotlib.pyplot as plt
 
 # Change header for modelling library
-sol_nixtla = sol.replace("", np.nan).dropna() \
+sol_nixtla = sol_hist.replace("", np.nan).dropna() \
                 .rename(columns = {
                     "Name": "unique_id",
                     "Date": "ds",
@@ -42,22 +47,52 @@ StatsForecast.plot(sol_nixtla)
 
 #%%
 
+# FEATURE ENGINEERING
+
+# Roll own cross-validation. Nixtla is very incompatible.
+#from statsforecast import StatsForecast
+from statsforecast.models import Naive, WindowAverage, AutoETS, AutoARIMA, AutoTBATS, CrostonOptimized
+from mlforecast import MLForecast
+from lightgbm import LGBMRegressor
+from xgboost import XGBRegressor
+
+def sf_feature(df, model_str):
+    sf_models = {
+        "naive": Naive(),
+        "window7": WindowAverage(7),
+        "ets": AutoETS(),
+        "arima": AutoARIMA(),
+        "croston": CrostonOptimized()
+    }
+    sf = StatsForecast(df=df, model=sf_models[model_str], freq="D", fallback_model=Naive())
+    sf.fit(df)
+    return sf.forecast(h)
+
+def mlf_feature(df, model_str):
+    mlf_models = {
+        "lgbm": LGBMRegressor(verbosity=-1),
+        "xgb": XGBRegressor()
+    }
+    mlf = MLForecast(df=df, model=mlf_models[model_str], freq="D")
+    mlf.fit(df)
+    return mlf.forecast(h)
+
+# Darts' RegressionEnsembleModel??
+
+#%%
+
 # === Model
 # SOON
 # 1. AutoARIMAx (trend break etc) with rolling windows frame 60
 # 2. LightGBM with feature engineering: X_(t-p), time since the incident?
 # 3. TBATS?
 
-# from statsforecast import StatsForecast
-from statsforecast.models import Naive, WindowAverage, AutoETS, AutoARIMA, CrostonOptimized
-from mlforecast import MLForecast
-import lightgbm as lgb
 import re
 from mlforecast.target_transforms import Differences
 
 # Modelling objects
 sf_models = [Naive(), WindowAverage(7), AutoETS(), AutoARIMA(), CrostonOptimized()]
-ml_models = [lgb.LGBMRegressor(verbosity=-1)]
+ml_models = [LGBMRegressor(verbosity=-1)]
 
 sf = StatsForecast(sf_models, freq="D", fallback_model=Naive())
 mlf = MLForecast(ml_models, freq="D", target_transforms=[Differences([11])],
