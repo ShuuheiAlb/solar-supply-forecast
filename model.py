@@ -1,19 +1,23 @@
 #%%
 
+import lib
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 # Import data, no set aside test data (let the real data shows it)
-sol = pd.read_csv("data/etl_out.csv")
+sol = pd.read_csv(lib.etl_out_path)
 
-# Select the data from establishment dates (actually should be in ETL)
-for name in sol["Name"].unique():
-    start_date_idx = sol[sol["Name"] == name].index[0]
-    est_date_idx = sol[(sol["Name"] == name) & (sol["Energy"] > 0)].index[0]
-    sol.drop(index = list(range(start_date_idx, est_date_idx)), inplace=True)
 # Convert date string to date object
 sol["Date"] = pd.to_datetime(sol["Date"])
+
+# Separate data: junk data since establishment date, historical data, questioned data
+for name in sol["Name"].unique():
+    sub_sol = sol[sol["Name"] == name].sort_values(by="Date")
+    # SOON
+    junk_start_idx = sub_sol.index[0]
+    junk_end_idx = sub_sol[sub_sol["Energy"] > 0].index[0]
+    hist_sub_sol = sub_sol.drop(index = list(range(junk_start_idx, junk_end_idx)))
+    quest_sub_sol =  sub_sol[-lib.h:]
 
 #%%
 
@@ -21,6 +25,7 @@ sol["Date"] = pd.to_datetime(sol["Date"])
 
 from statsforecast import StatsForecast
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+#import matplotlib.pyplot as plt
 
 # Change header for modelling library
 sol_nixtla = sol.replace("", np.nan).dropna() \
@@ -44,7 +49,7 @@ StatsForecast.plot(sol_nixtla)
 # 3. TBATS?
 
 # from statsforecast import StatsForecast
-from statsforecast.models import Naive, WindowAverage, AutoARIMA, AutoETS, CrostonOptimized
+from statsforecast.models import Naive, WindowAverage, AutoETS, AutoARIMA, CrostonOptimized
 from mlforecast import MLForecast
 import lightgbm as lgb
 import re
@@ -71,7 +76,7 @@ sol_mlf = pd.DataFrame(sol_nixtla).rename(columns = lambda x:re.sub('[^A-Za-z0-9
 from os.path import isfile
 import pickle
 
-h = 7
+h = lib.h
 ds_limit = 500
 if not isfile("data/cv_obj.pkl"):
     # Manual cvs to allow integration of various models
@@ -178,12 +183,11 @@ with open("style.css") as css:
 
 st.title("Solar Supply Forecast in South Australia")
 
-curr_loc = st.selectbox(
-   "Location code",
-   sorted(sol["Name"].unique()),
-   index=0,
-   placeholder="Select"
-)
+curr_loc = st.selectbox("Location code",
+                        sorted(sol["Name"].unique()),
+                        index=0,
+                        placeholder="Select")
+
 def sol_points(unique_id):
     curr_hists = hists[hists["unique_id"] == unique_id]
     curr_preds = preds[preds["unique_id"] == unique_id]

@@ -6,7 +6,7 @@ A simple Steamlit visualisation is presented [here](https://shuuheialb-solar-sup
 
 ## How to Run
 
-Run `script_etl.py` then run `script_model.py`. The ETL and modelling may take some time (~0.5 min and 7-8 mins respectively).
+Run `etl.py`, then run `model.py`. The process may take some time (~0.5 min for ETL and 7-8 mins for modelling respectively).
 
 ## Data
 
@@ -26,7 +26,7 @@ Python library [Nixtla's StatsForecast](https://nixtlaverse.nixtla.io/statsforec
 
 The current cross validation implementation is a simple forward chain, with 30-day steps (i.e. monthly) for shorter series and 90-day steps (i.e. quarter yearly) for longer series.
 
-More ideas can be read at [the Jupyter's version here](https://nbviewer.org/github/ShuuheiAlb/solar-supply-forecast/blob/main/nb.ipynb).
+More ideas can be read at [the Jupyter's version here](https://nbviewer.org/github/ShuuheiAlb/solar-supply-forecast/blob/main/tmp/nb.ipynb).
 
 ## Other tools used
 
