@@ -1,36 +1,51 @@
 #%%
 
+# Check if model exists
+from os.path import isfile
+if isfile("data/model.pkl"):
+    yes = input("Model has been developed. Continue? (Y)")
+    if yes != "Y":
+        print("Quitting ...")
+        exit
+
+#%%
+
 import lib
 import numpy as np
 import pandas as pd
 
 # Import data, no set aside test data (let the real data shows it)
 sol = pd.read_csv(lib.etl_out_path)
+# Ignore unnamed columns
+sol = sol.loc[:, ~sol.columns.str.contains('^Unnamed')]
 
 # Convert date string to date object
 sol["Date"] = pd.to_datetime(sol["Date"])
 
-# Separate data: questioned data, meaningful historical data
-hist_sub_sols = []
+# Separate data: questioned data, test data, meaningful historical data
+h = lib.h
 quest_sub_sols = []
+test_sub_sols = []
+hist_sub_sols = []
 for name in sol["Name"].unique():
     sub_sol = sol[sol["Name"] == name].sort_values(by="Date")
-    quest_sub_sol =  sub_sol.iloc[-lib.h:]
+    quest_sub_sol = sub_sol.iloc[-h:]
     quest_sub_sols.append(quest_sub_sol)
+    test_sub_sol = sub_sol.iloc[-2*h:-h]
+    test_sub_sols.append(test_sub_sol)
     estb_time_idx = sub_sol[sub_sol["Energy"] > 0].index[0]
-    hist_sub_sol = sub_sol.loc[estb_time_idx:].iloc[:-lib.h]
+    hist_sub_sol = sub_sol.loc[estb_time_idx:].iloc[:-2*h]
     hist_sub_sols.append(hist_sub_sol)
-    print(name, len(hist_sub_sol))
+sol_quest = pd.concat(quest_sub_sols)
+sol_test = pd.concat(test_sub_sols)
 sol_hist = pd.concat(hist_sub_sols)
-sol_quest = pd.concat(hist_sub_sols)
 
 #%%
 
 # === Exploratory Plot
 
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from statsforecast import StatsForecast
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
 # Change header for modelling library
 sol_nixtla = sol_hist.replace("", np.nan).dropna() \
@@ -41,203 +56,132 @@ sol_nixtla = sol_hist.replace("", np.nan).dropna() \
                 })
 StatsForecast.plot(sol_nixtla)
 
-#df = sol_nixtla[sol_nixtla["unique_id"] == "BNGSF1", "y"]
-#plot_acf(df, lags=90) # find total lags: mostly less than 60
-#plot_pacf(df, lags=50) # find differences
+# Comparative 2D plot for forecast vs actual
+def compare(df1, df2, df3=None):
+    fig, ax = plt.subplots()
+    ax.scatter(df1, df2, c=df3)
+
+    # Plot y=x helpline
+    lims = [
+        np.min([ax.get_xlim(), ax.get_ylim()]),
+        np.max([ax.get_xlim(), ax.get_ylim()]),
+    ]
+    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0)
+    ax.set_aspect('equal')
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
+    plt.show()
+    return
 
 #%%
 
-# FEATURE ENGINEERING
+# === Basic feature engineering
 
-# Roll own cross-validation. Nixtla is very incompatible.
+def generate_basic_features_(df):
+    # Time editted vars
+    df["sin"] = np.sin(df["Date"].dt.day_of_year/365.25)
+    df["cos"] = np.cos(df["Date"].dt.day_of_year/365.25)
+
+    # Shift & rolling max vars
+    df["xn-1"] = df["Energy"].shift(1).fillna(method='bfill').fillna(method='ffill')
+    df["xn-2"] = df["Energy"].shift(2).fillna(method='bfill').fillna(method='ffill')
+    df["maxn-7"] = df["Energy"].rolling(7).max().fillna(method='bfill').fillna(method='ffill')
+    df["minn-7"] = df["Energy"].rolling(7).min().fillna(method='bfill').fillna(method='ffill')
+    return(df)
+
+def generate_basic_features(df, df_past = None):
+    # Processing for each name
+    dfs = []
+    if df_past is None:
+        return(generate_basic_features_(df))
+    for name in df["Name"].unique():
+        df_ = df[df["Name"] == name]
+        df_past_ = df_past[df_past["Name"] == name]
+        if df_past_ is not None:
+            df_len_ = len(df_)
+            df_ = pd.concat([df_past_, df_])
+            df_ = generate_basic_features_(df_)
+            df_ = df_[-df_len_:]
+        else:
+            df_ = generate_basic_features_(df_)
+        dfs.append(df_)
+    return(pd.concat(dfs))
+
+sol_hist = generate_basic_features(sol_hist)
+#%%
+
+# === Accuracy from Linear Regression
+# Ideally need capacity data to anchor errors
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_validate
+
+features = sol_hist.columns.drop(["Energy", "Date", "Name", "Latitude"])
+for name in sol["Name"].unique():
+    sol_hist_ = sol_hist[sol_hist["Name"] == name] \
+                    .sample(frac=1).reset_index(drop=True) # shuffle
+    x = sol_hist_[features]
+    y = sol_hist_["Energy"]
+    scores = cross_validate(LinearRegression(), x, y, cv=10,
+                            scoring=("r2", "neg_root_mean_squared_error"),
+                            return_train_score=True)
+    print(f'{name} r2 score {scores["test_r2"].mean()} std {scores["test_r2"].std()}')
+    print(f'{name} RMSE {-scores["test_neg_root_mean_squared_error"].mean()} std {scores["test_neg_root_mean_squared_error"].std()}')
+    # Soon: Standard error
+
+#%%
+
+# === Next step: Classical vars (SOON)
 #from statsforecast import StatsForecast
-from statsforecast.models import Naive, WindowAverage, AutoETS, AutoARIMA, AutoTBATS, CrostonOptimized
-from mlforecast import MLForecast
-from lightgbm import LGBMRegressor
-from xgboost import XGBRegressor
+from statsforecast.models import AutoETS, AutoARIMA, CrostonOptimized
 
-def sf_feature(df, model_str):
+def generate_sf_features(df, model_str, limit=30, h=1):
+    df_sf = pd.DataFrame(df[["Name", "Date", "Energy"]]) \
+                .replace("", np.nan).dropna() \
+                .rename(columns = {
+                    "Name": "unique_id",
+                    "Date": "ds",
+                    "Energy": "y"
+                })
     sf_models = {
-        "naive": Naive(),
-        "window7": WindowAverage(7),
         "ets": AutoETS(),
         "arima": AutoARIMA(),
         "croston": CrostonOptimized()
     }
-    sf = StatsForecast(df=df, model=sf_models[model_str], freq="D", fallback_model=Naive())
-    sf.fit(df)
+    df_sf = df_sf[-min(len(df_sf), 30):]
+    sf = StatsForecast(model=sf_models[model_str], freq="D")
+    sf.fit(df_sf)
     return sf.forecast(h)
 
-def mlf_feature(df, model_str):
-    mlf_models = {
-        "lgbm": LGBMRegressor(verbosity=-1),
-        "xgb": XGBRegressor()
-    }
-    mlf = MLForecast(df=df, model=mlf_models[model_str], freq="D")
-    mlf.fit(df)
-    return mlf.forecast(h)
 
-# Darts' RegressionEnsembleModel??
-
-#%%
-
-# === Model
-# SOON
-# 1. AutoARIMAx (trend break etc) with rolling windows frame 60
-# 2. LightGBM with feature engineering: X_(t-p), time since the incident?
-# 3. TBATS?
-
-import re
-from mlforecast.target_transforms import Differences
-
-# Modelling objects
-sf_models = [Naive(), WindowAverage(7), AutoETS(), AutoARIMA(), CrostonOptimized()]
-ml_models = [LGBMRegressor(verbosity=-1)]
-
-sf = StatsForecast(sf_models, freq="D", fallback_model=Naive())
-mlf = MLForecast(ml_models, freq="D", target_transforms=[Differences([11])],
-                 lags=range(1, 20), date_features=["month"]) #seems working well with BNGSF
-
-# Preprocessing datasets differently
-sol_sf = pd.DataFrame(sol_nixtla)[["unique_id", "ds", "y", "Temperature", "Solar Irradiance"]]
-sol_mlf = pd.DataFrame(sol_nixtla).rename(columns = lambda x:re.sub('[^A-Za-z0-9_]+', '', x))
-# prep = sf.preprocess(df)
 
 # %%
 
-# === Cross-validation
-# For simplicity, load the objects from Pickle
+# Quest iterative prediction (SOON)
+def iterative_predict(model, df, df_past):
+    idxs = df.groupby("Name").apply(lambda x: x["Energy"].isna().index[0]).tolist()
+    generate_basic_features(df.loc[idxs, :], df_past)
 
-from os.path import isfile
+
+#  Save in pickle
 import pickle
+hists = sol_hist #rename
+tests = generate_basic_features(sol_test, sol_hist)
+quests = generate_basic_features(sol_quest, pd.concat([sol_hist, sol_test]))
+preds = []
+for name in hists["Name"].unique():
+    hist = hists[hists["Name"] == name]
+    model = LinearRegression().fit(hist[features], hist["Energy"])
+    test = tests[tests["Name"] == name]
+    pred = pd.DataFrame(test[["Name", "Date"]])
+    pred["Energy"] = model.predict(test[features])
+    preds.append(pred)
+    quests["Energy"] = model.predict(quests[features])
+preds = pd.concat(preds)
 
-h = lib.h
-ds_limit = 500
-if not isfile("data/cv_obj.pkl"):
-    # Manual cvs to allow integration of various models
-    # Check: arima_string(sf.fitted_[0,0].model_)
-    cvs = []
-    for unique_id in sol_sf["unique_id"].unique():
-        sol_ = sol_sf[sol_sf["unique_id"] == unique_id]
-        # Separated based on short vs long time series
-        step = 90 if len(sol_) > ds_limit else 30
-        n_windows = min(np.floor(len(sol_)/step).astype(int), 10)
-        cv_ = sf.cross_validation(df=sol_, h=h, n_windows=n_windows, step_size=step).reset_index()
-        cvs.append(cv_)
-    cvs = pd.concat(cvs)
-    cvs["h"] = (cvs["ds"] - cvs["cutoff"]).dt.days
-    
-    # Ensemble result
-    cvs["EnsembleFreaky"] = (cvs["AutoARIMA"] + cvs["WindowAverage"])/2
-    cvs["EnsembleAll"] = cvs.loc[:, "Naive":"CrostonOptimized"].mean(axis=1)
+with open('data/model.pkl', 'wb') as outp:
+    pickle.dump(hists, outp, pickle.HIGHEST_PROTOCOL)
+    pickle.dump(tests, outp, pickle.HIGHEST_PROTOCOL)
+    pickle.dump(preds, outp, pickle.HIGHEST_PROTOCOL)
+    pickle.dump(quests, outp, pickle.HIGHEST_PROTOCOL)
 
-    with open('data/cv_obj.pkl', 'wb') as outp:
-        pickle.dump(cvs, outp, pickle.HIGHEST_PROTOCOL)
-else:
-    with open('data/cv_obj.pkl', 'rb') as inp:
-        cvs = pickle.load(inp)
-
-#print(cvs)
-
-#%%
-
-# === Accuracy
-
-from utilsforecast.evaluation import evaluate
-from utilsforecast.losses import mape, mse #mase soon
-
-def evaluate_cv(df, metrics): #Simplify soon?
-    models = df.drop(columns=['unique_id', 'ds', 'cutoff', 'y', 'h']).columns.tolist()
-    evals = []
-    for cutoff in df['cutoff'].unique():
-        df_smp = df[df['cutoff'] == cutoff]
-        for h in df_smp['h'].unique():
-            df_smp_smp = df_smp[df_smp['h'] == h]
-            eval_ = evaluate(df_smp_smp, metrics=metrics, models=models)
-            eval_['h'] = h
-            evals.append(eval_)
-    # SOON: weight based on number of training samples?
-    evals = pd.concat(evals)
-    evals = evals.groupby(["unique_id", "metric", "h"]).mean(numeric_only=True)
-    evals['best_model'] = evals.idxmin(axis=1)
-    return evals.reset_index()
-
-# The Auto function has been based on grid search using AIC so AIC/BIC not included
-errors = evaluate_cv(cvs, [mape, mse])
-#print(errors)
-
-#%%
-
-# ! The best model for unique_id, h should be saved and then prediction remade
-#   But the specifics of the model like p,q should also be recorded
-#   not sure if Nixtla saves them from
-
-hists = sol_sf
-final = cvs[cvs["cutoff"] == cvs.groupby("unique_id")["cutoff"].transform(max)]
-final = final.merge(errors[errors['metric'] == "mse"][["unique_id", "best_model", "h"]], \
-                    on=["unique_id", "h"], how="outer")
-final = final.melt(id_vars = ["unique_id", "ds", "best_model"])
-preds = final[final["best_model"] == final["variable"]] \
-            .drop(columns="variable") \
-            .sort_values(by = ["unique_id", "ds"]) \
-            .rename(columns = {"value": "y"})
-#print(preds)
-
-
-#%% ML TRY
-from mlforecast.auto import AutoLightGBM, AutoMLForecast
-def evaluate(df, group):
-    results = []
-    for model in df.columns.drop(['unique_id', 'ds']):
-        model_res = M4Evaluation.evaluate(
-            'data', group, df[model].to_numpy().reshape(-1, horizon)
-        )
-        model_res.index = [model]
-        results.append(model_res)
-    return pd.concat(results).T.round(2)
-
-auto_mlf = AutoMLForecast(models={'lgb': AutoLightGBM()}, freq="D", season_length=365)
-#auto_mlf.fit(sol_mlf,
-#    n_windows=10, h=7, num_samples=5,  # number of trials to run
-#)
-#preds = auto_mlf.predict(h)
-#preds = preds.rename(columns = {"lgb": "y"})
-
-
-# %%
-
-# === Basic visualisation
-
-import streamlit as st
-import plotly.graph_objects as go
-#import plotly.io as pio
-#pio.renderers.default = "plotly_mimetype+notebook_connected"
-
-with open("style.css") as css:
-    st.markdown( f'<style>{css.read()}</style>' , unsafe_allow_html= True)
-
-st.title("Solar Supply Forecast in South Australia")
-
-curr_loc = st.selectbox("Location code",
-                        sorted(sol["Name"].unique()),
-                        index=0,
-                        placeholder="Select")
-
-def sol_points(unique_id):
-    curr_hists = hists[hists["unique_id"] == unique_id]
-    curr_preds = preds[preds["unique_id"] == unique_id]
-    return(dict(x = [curr_hists["ds"][-60:-h], curr_hists["ds"][-(h+1):], pd.concat([curr_hists["ds"][-(h+1):-h], curr_preds["ds"]])],
-                y = [curr_hists["y"][-60:-h], curr_hists["y"][-(h+1):], pd.concat([curr_hists["y"][-(h+1):-h], curr_preds["y"]])],
-                visible = True))
-curr_sol_points = sol_points(curr_loc)
-
-YELLOW = "#e6ba72"
-GREEN = "#c1c87a"
-fig = go.Figure()
-fig.add_trace(go.Scatter(x = curr_sol_points["x"][0], y = curr_sol_points["y"][0], mode='lines', name = "Historic", line={"color": YELLOW}))
-fig.add_trace(go.Scatter(x = curr_sol_points["x"][1], y = curr_sol_points["y"][1], mode='lines', name = "Actual", line={"color": YELLOW, "dash": 'dot'}))
-fig.add_trace(go.Scatter(x = curr_sol_points["x"][2], y = curr_sol_points["y"][2], mode='lines', name = "Forecast", line={"color": GREEN}))
-fig.update_layout(barmode = 'overlay', template = "plotly_white", yaxis_title = "Energy (MW)")
-
-st.plotly_chart(fig, use_container_width=True)
 # %%
