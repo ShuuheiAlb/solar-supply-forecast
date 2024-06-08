@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 import lib
 import pandas as pd
 
-with open('data/model.pkl', 'rb') as inp:
+with open(lib.model_out_path, 'rb') as inp:
     hists = pd.read_pickle(inp)
     tests = pd.read_pickle(inp)
     preds = pd.read_pickle(inp)
@@ -32,7 +32,7 @@ def sol_points(name):
     curr_tests = tests[tests["Name"] == name]
     curr_preds = preds[preds["Name"] == name]
     curr_quests = quests[quests["Name"] == name]
-    st.write(curr_hists[-60:], curr_tests, curr_preds, curr_quests)
+    #st.write(curr_hists[-60:], curr_tests, curr_preds, curr_quests)
     return(dict(x = [
                     curr_hists["Date"][-60:],
                     pd.concat([curr_hists["Date"][-1:], curr_tests["Date"]]),
