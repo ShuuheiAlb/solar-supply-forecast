@@ -179,6 +179,7 @@ preds = pd.concat(preds)
 #  Save in pickle
 import pickle
 with open(lib.model_out_path, 'wb') as outp:
-    pickle.dump([hists, tests, preds, quests], outp)
+    for df in [hists, tests, preds, quests]:    
+        pickle.dump(df, outp, protocol=pickle.HIGHEST_PROTOCOL)
 
 # %%

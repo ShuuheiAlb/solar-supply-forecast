@@ -12,7 +12,10 @@ import pickle
 import pandas as pd
 
 with open(lib.model_out_path, 'rb') as inp:
-    hists, tests, preds, quests = hists = pickle.load(inp)
+    hists = pickle.load(inp)
+    tests = pickle.load(inp)
+    preds = pickle.load(inp)
+    quests = pickle.load(inp)
 stations = pd.read_csv(lib.station_path).set_index("Full Name")
 
 with open("style.css") as css:

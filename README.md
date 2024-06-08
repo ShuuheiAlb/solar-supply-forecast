@@ -8,6 +8,8 @@ A simple Steamlit visualisation is presented [here](https://shuuheialb-solar-sup
 
 Run `etl.py`, then run `model.py`, then `streamlit run main.py`. The ETL and modelling process may take some time (~0.5 min and few mins respectively).
 
+Note that due to Pandas' backward compatibility issues with Pickle and Streamlit, I have updated the `requirement.txt` into `pandas < 2.0.0`
+
 ## Data
 
 Data is collected with [OpenNEM API](https://opennem.org.au/) and [Open Meteo API](https://open-meteo.com/), made available under [CC BY 4.0 License](https://creativecommons.org/licenses/by/4.0/).
