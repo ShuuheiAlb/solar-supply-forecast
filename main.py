@@ -8,13 +8,11 @@ import plotly.graph_objects as go
 #pio.renderers.default = "plotly_mimetype+notebook_connected"
 
 import lib
+import pickle
 import pandas as pd
 
 with open(lib.model_out_path, 'rb') as inp:
-    hists = pd.read_pickle(inp)
-    tests = pd.read_pickle(inp)
-    preds = pd.read_pickle(inp)
-    quests = pd.read_pickle(inp)
+    hists, tests, preds, quests = hists = pickle.load(inp)
 stations = pd.read_csv(lib.station_path).set_index("Full Name")
 
 with open("style.css") as css:

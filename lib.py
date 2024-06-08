@@ -5,9 +5,9 @@
 
 # Paths
 etl_out_path = "data/etl_out.csv"
-station_path = "data/station.csv"
 etl_out_db_path = "data/etl_out.db" #soon sqlite3
-model_out_path = "data/model.pkl"
+station_path = "data/station.csv"
+model_out_path = "data/model_out.csv"
 
 # Forecast horizon
 h = 7

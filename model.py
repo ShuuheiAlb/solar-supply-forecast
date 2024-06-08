@@ -177,10 +177,8 @@ for name in hists["Name"].unique():
 preds = pd.concat(preds)
 
 #  Save in pickle
+import pickle
 with open(lib.model_out_path, 'wb') as outp:
-    hists.to_pickle(outp)
-    tests.to_pickle(outp)
-    preds.to_pickle(outp)
-    quests.to_pickle(outp)
+    pickle.dump([hists, tests, preds, quests], outp)
 
 # %%
