@@ -7,7 +7,6 @@ import plotly.graph_objects as go
 #import plotly.io as pio
 #pio.renderers.default = "plotly_mimetype+notebook_connected"
 
-import pickle
 import lib
 import pandas as pd
 

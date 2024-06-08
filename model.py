@@ -161,9 +161,7 @@ def iterative_predict(model, df, df_past):
     idxs = df.groupby("Name").apply(lambda x: x["Energy"].isna().index[0]).tolist()
     generate_basic_features(df.loc[idxs, :], df_past)
 
-
 #  Save in pickle
-import pickle
 hists = sol_hist #rename
 tests = generate_basic_features(sol_test, sol_hist)
 quests = generate_basic_features(sol_quest, pd.concat([sol_hist, sol_test]))
@@ -179,9 +177,9 @@ for name in hists["Name"].unique():
 preds = pd.concat(preds)
 
 with open('data/model.pkl', 'wb') as outp:
-    pickle.dump(hists, outp, pickle.HIGHEST_PROTOCOL)
-    pickle.dump(tests, outp, pickle.HIGHEST_PROTOCOL)
-    pickle.dump(preds, outp, pickle.HIGHEST_PROTOCOL)
-    pickle.dump(quests, outp, pickle.HIGHEST_PROTOCOL)
+    hists.to_pickle(outp)
+    tests.to_pickle(outp)
+    preds.to_pickle(outp)
+    quests.to_pickle(outp)
 
 # %%
