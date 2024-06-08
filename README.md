@@ -2,7 +2,7 @@
 
 This is my first attempt at exploring Energy and Environmental topic, which may yield useful information to anticipate potential grid volatility. A forecast on energy generation using Python, with a narrowed scoop of solar energy in South Australia.
 
-A simple Steamlit visualisation is presented [here](https://shuuheialb-solar-supply-forecast-script-model-cakycc.streamlit.app/).
+A simple Steamlit visualisation is presented [here](https://solar-supply-forecast-sa.streamlit.app/).
 
 ## How to Run
 
