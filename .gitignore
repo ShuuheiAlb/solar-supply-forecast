@@ -1,8 +1,7 @@
 
 # Hidden data
-.ipynb_checkpoints/
+__pycache__/
 venv/
+.ipynb_checkpoints/
 
 # Interactively made
-/sol_data.csv
-/save_model.pkl
