@@ -3,10 +3,10 @@
 # Check if model exists
 from os.path import isfile
 if isfile("data/model.pkl"):
-    yes = input("Model has been developed. Continue? (Y)")
+    yes = input("Model has been developed. Do you still want to continue (Y)? ")
     if yes != "Y":
         print("Quitting ...")
-        exit
+        exit()
 
 #%%
 
@@ -115,7 +115,7 @@ sol_hist = generate_basic_features(sol_hist)
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import cross_validate
 
-features = sol_hist.columns.drop(["Energy", "Date", "Name", "Latitude"])
+features = sol_hist.columns.drop(["Energy", "Date", "Name"])
 for name in sol["Name"].unique():
     sol_hist_ = sol_hist[sol_hist["Name"] == name] \
                     .sample(frac=1).reset_index(drop=True) # shuffle

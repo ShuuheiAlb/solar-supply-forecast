@@ -51,11 +51,14 @@ def exploratory_test():
 
 # Check if we can create a database
 if isfile(lib.etl_out_path):
-    print(f"File {lib.etl_out_path} already exists")
-    exit()
+    yes = input(f"File {lib.etl_out_path} already exists. Do you still want to continue (Y)? ")
+    if yes != "Y":
+        print("Quitting ...")
+        exit()
 
 # Compile station list
 try:
+    print("Compiling station list ...")
     data = opennem_response(station_path).json()["data"]
     stations = set()
     for entry in data:
@@ -79,8 +82,9 @@ except requests.exceptions.RequestException as e:
 #stations = [("ADP", "", 4888), ("BNGSF1", "", 13468)]
 try:
     station_supply_dfs = []
+    station_info_dfs = []
     for station in stations:
-        station_code, _, station_loc_id = station
+        station_code, station_name, station_loc_id = station
         print(f"Extracting data from {station_code} station ...")
 
         ebs_path = f"/stats/energy/station/NEM/{station_code}"
@@ -109,28 +113,28 @@ try:
                                         else station_supply_array + single_plant_supply_array
 
         # In addition, collect historic weather from OpenMeteo, plus 7 day predictions afterward
-        # Its archive API sometimes do not record last few days, but the std API does
-        #    so we take some past_days_limit (i.e. 7) of data from the std API instead
+        # Its archive API has 2-5 day delay, while the forecast API covers those delays
         datetime_now = datetime.now(timezone.utc).replace(microsecond=0, second=0, minute=0)
         archive_params = {"latitude": station_loc_record["lat"],
             "longitude": station_loc_record["lng"],
             "start_date": (datetime_now - timedelta(days=len(single_plant_supply_array))).strftime("%Y-%m-%d"),
             "end_date": (datetime_now - timedelta(days=1+openmeteo_archive_undefined_past_days_limit)).strftime("%Y-%m-%d"),
-            "daily": "temperature_2m_mean,shortwave_radiation_sum",
+            "daily": "shortwave_radiation_sum,temperature_2m_mean,precipitation_sum",
             "timezone": "Europe/London"
             }
         forecast_params = {"latitude": station_loc_record["lat"],
             "longitude": station_loc_record["lng"],
             "past_days": openmeteo_archive_undefined_past_days_limit,
             "forecast_days": lib.h,
-            "daily": "temperature_2m_mean,shortwave_radiation_sum",
+            "daily": "shortwave_radiation_sum,temperature_2m_mean,precipitation_sum",
             "timezone": "Europe/London"
             }
         archive_weather_data = open_meteo_response("", archive_params).json()["daily"]
         forecast_weather_data = open_meteo_response("", forecast_params, is_archive=False).json()["daily"]
-        mean_temps = archive_weather_data["temperature_2m_mean"] + forecast_weather_data["temperature_2m_mean"]
         tot_rads = archive_weather_data["shortwave_radiation_sum"] + forecast_weather_data["shortwave_radiation_sum"]
-
+        mean_temps = archive_weather_data["temperature_2m_mean"] + forecast_weather_data["temperature_2m_mean"]
+        tot_precipits = archive_weather_data["precipitation_sum"] + forecast_weather_data["precipitation_sum"]
+        
         # Create the energy supply for station
         station_supply_array_padded = np.append(station_supply_array, [np.nan] * lib.h)
         station_supply_df_expected_len = len(station_supply_array_padded)
@@ -138,15 +142,23 @@ try:
                                 "Date": [datetime_now - timedelta(days=i) + timedelta(days=lib.h) \
                                             for i in range(station_supply_df_expected_len, 0, -1)],
                                 "Energy": station_supply_array_padded,
-                                "Temperature": mean_temps,
                                 "Solar Irradiance": tot_rads,
-                                "Latitude": [station_loc_record["lat"]] * station_supply_df_expected_len
+                                "Temperature": mean_temps,
+                                "Precipitation": tot_precipits,
+                            })
+        station_info_df = pd.DataFrame({"Name": [station_code],
+                                "Full Name": [station_name],
+                                "Longitude": [station_loc_record["lng"]],
+                                "Latitude": [station_loc_record["lat"]]
                             })
         station_supply_dfs.append(station_supply_df)
+        station_info_dfs.append(station_info_df)
     
-    # Saving, with caveat: OpenMeteo has a range of 1-7 days missing
+    # Saving
     solar_supply_df = pd.concat(station_supply_dfs)
     solar_supply_df.to_csv(lib.etl_out_path)
+    station_df = pd.concat(station_info_dfs)
+    station_df.to_csv(lib.station_path)
     
 except requests.exceptions.RequestException as e:
     print(f"Error: {e}")

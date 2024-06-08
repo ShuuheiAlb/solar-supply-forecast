@@ -6,7 +6,9 @@ import streamlit as st
 import plotly.graph_objects as go
 #import plotly.io as pio
 #pio.renderers.default = "plotly_mimetype+notebook_connected"
+
 import pickle
+import lib
 import pandas as pd
 
 with open('data/model.pkl', 'rb') as inp:
@@ -14,14 +16,15 @@ with open('data/model.pkl', 'rb') as inp:
     tests = pickle.load(inp)
     preds = pickle.load(inp)
     quests = pickle.load(inp)
+stations = pd.read_csv(lib.station_path).set_index("Full Name")
 
 with open("style.css") as css:
     st.markdown( f'<style>{css.read()}</style>' , unsafe_allow_html= True)
 
 st.title("Solar Supply Forecast in South Australia")
 
-curr_loc = st.selectbox("Location code",
-                        sorted(hists["Name"].unique()),
+curr_loc_full_name = st.selectbox("Location",
+                        sorted(stations.index),
                         index=0,
                         placeholder="Select")
 
@@ -43,7 +46,7 @@ def sol_points(name):
                     pd.concat([curr_preds["Energy"][-1:], curr_quests["Energy"]])
                 ],
                 visible = True))
-curr_sol_points = sol_points(curr_loc)
+curr_sol_points = sol_points(stations.loc[curr_loc_full_name, "Name"])
 
 YELLOW = "#e6ba72"
 GREEN = "#c1c87a"
