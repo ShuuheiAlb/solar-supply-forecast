@@ -176,6 +176,7 @@ for name in hists["Name"].unique():
     quests["Energy"] = model.predict(quests[features])
 preds = pd.concat(preds)
 
+
 with open('data/model.pkl', 'wb') as outp:
     hists.to_pickle(outp)
     tests.to_pickle(outp)
