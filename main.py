@@ -50,7 +50,7 @@ curr_sol_points = sol_points(stations.loc[curr_loc_full_name, "Name"])
 
 YELLOW = "#e6ba72"
 GREEN = "#c1c87a"
-MAUVE = "#30B0FF"
+MAUVE = "#E0B0FF"
 fig = go.Figure()
 fig.add_trace(go.Scatter(x = curr_sol_points["x"][0],
                          y = curr_sol_points["y"][0],
