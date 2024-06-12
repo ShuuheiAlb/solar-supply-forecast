@@ -77,59 +77,48 @@ def compare(df1, df2, df3=None):
 
 # === Basic feature engineering
 
+from itertools import product
+
 def generate_basic_features_(df):
     # Time editted vars
+    df["doy"] = df["Date"].dt.day_of_year
     df["sin"] = np.sin(df["Date"].dt.day_of_year/365.25)
     df["cos"] = np.cos(df["Date"].dt.day_of_year/365.25)
 
     # Shift & rolling max vars
-    df["xn-1"] = df["Energy"].shift(1).fillna(method='bfill').fillna(method='ffill')
-    df["xn-2"] = df["Energy"].shift(2).fillna(method='bfill').fillna(method='ffill')
-    df["maxn-7"] = df["Energy"].rolling(7).max().fillna(method='bfill').fillna(method='ffill')
-    df["minn-7"] = df["Energy"].rolling(7).min().fillna(method='bfill').fillna(method='ffill')
+    shift_num = 7
+    for i in range(1, shift_num + 1):
+        df["xn-" + str(i)] = df["Energy"].shift(i).fillna(method='bfill').fillna(method='ffill')
+    df["maxn-14"] = df["Energy"].rolling(14).max().fillna(method='bfill').fillna(method='ffill')
+    df["minn-14"] = df["Energy"].rolling(14).min().fillna(method='bfill').fillna(method='ffill')
+
+    # Second-degree
+    exog_features = ["Solar Irradiance", "Temperature", "Precipitation"]
+    for e1, e2 in product(exog_features, exog_features):
+        df[e1 + "_times_" + e2] = df[e1] * df[e2]
+
     return(df)
 
 def generate_basic_features(df, df_past = None):
     # Processing for each name
     dfs = []
-    if df_past is None:
-        return(generate_basic_features_(df))
     for name in df["Name"].unique():
-        df_ = df[df["Name"] == name]
-        df_past_ = df_past[df_past["Name"] == name]
-        if df_past_ is not None:
+        df_ = pd.DataFrame(df[df["Name"] == name])
+        df_past_ = df_past[df_past["Name"] == name] if df_past is not None else None
+        if df_past_ is None:
+            df_ = generate_basic_features_(df_)
+        else:
             df_len_ = len(df_)
             df_ = pd.concat([df_past_, df_])
             df_ = generate_basic_features_(df_)
+            # df_ = generate_sf_features(df_)
             df_ = df_[-df_len_:]
-        else:
-            df_ = generate_basic_features_(df_)
         dfs.append(df_)
     return(pd.concat(dfs))
 
 sol_hist = generate_basic_features(sol_hist)
-#%%
-
-# === Accuracy from Linear Regression
-# Ideally need capacity data to anchor errors
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import cross_validate
-
-features = sol_hist.columns.drop(["Energy", "Date", "Name"])
-for name in sol["Name"].unique():
-    sol_hist_ = sol_hist[sol_hist["Name"] == name] \
-                    .sample(frac=1).reset_index(drop=True) # shuffle
-    x = sol_hist_[features]
-    y = sol_hist_["Energy"]
-    scores = cross_validate(LinearRegression(), x, y, cv=10,
-                            scoring=("r2", "neg_root_mean_squared_error"),
-                            return_train_score=True)
-    print(f'{name} r2 score {scores["test_r2"].mean()} std {scores["test_r2"].std()}')
-    print(f'{name} RMSE {-scores["test_neg_root_mean_squared_error"].mean()} std {scores["test_neg_root_mean_squared_error"].std()}')
-    # Soon: Standard error
 
 #%%
-
 # === Next step: Classical vars (SOON)
 #from statsforecast import StatsForecast
 from statsforecast.models import AutoETS, AutoARIMA, CrostonOptimized
@@ -150,16 +139,46 @@ def generate_sf_features(df, model_str, limit=30, h=1):
     df_sf = df_sf[-min(len(df_sf), 30):]
     sf = StatsForecast(model=sf_models[model_str], freq="D")
     sf.fit(df_sf)
+    # for each df, vectorise
     return sf.forecast(h)
 
+#%%
+
+# === Accuracy from Ridge/Lasso Regression
+# SOON: paralellisation with joblib
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.pipeline import Pipeline
+from skopt import BayesSearchCV
+from skopt.space import Real
+from skopt.callbacks import DeltaYStopper
+
+features = sol_hist.columns.drop(["Energy", "Date", "Name"])
+bys = {}
+for name in sol["Name"].unique():
+    sol_hist_ = sol_hist[sol_hist["Name"] == name] \
+                    .sample(frac=1).reset_index(drop=True) # shuffle
+    x = sol_hist_[features]
+    y = sol_hist_["Energy"]
+    ridge_search = {"model": [Ridge()], "model__alpha": Real(0, 10)}
+    lasso_search = {"model": [Lasso()], "model__alpha": Real(0, 10)}
+    pipe = Pipeline([('model', LinearRegression())])
+    by = BayesSearchCV(pipe, [(ridge_search, 30), (lasso_search, 30)], # n_iter=30
+                       cv=5, scoring="r2",
+                       optimizer_kwargs={'base_estimator': 'RF'},
+                       fit_params={"callback": DeltaYStopper(delta=1e-2)},
+                       n_jobs=-1)
+    by.fit(x, y)
+    print(f"{name} best param: {by.best_params_}")
+    bys[name] = by
+    # Soon: Standard error
 
 
 # %%
 
 # Quest iterative prediction (SOON)
-def iterative_predict(model, df, df_past):
+def iter_predict(model, df, df_past):
     idxs = df.groupby("Name").apply(lambda x: x["Energy"].isna().index[0]).tolist()
-    generate_basic_features(df.loc[idxs, :], df_past)
+    return generate_basic_features(df.loc[idxs, :], df_past)
 
 # Arrange visualised datasets
 hists = sol_hist #rename
@@ -168,12 +187,18 @@ quests = generate_basic_features(sol_quest, pd.concat([sol_hist, sol_test]))
 preds = []
 for name in hists["Name"].unique():
     hist = hists[hists["Name"] == name]
-    model = LinearRegression().fit(hist[features], hist["Energy"])
+
     test = tests[tests["Name"] == name]
+    model = bys[name].best_params_["model"]
+    alpha = bys[name].best_params_["model__alpha"]
+    model.set_params(alpha=alpha)
+    model.fit(hist[features], hist["Energy"])
     pred = pd.DataFrame(test[["Name", "Date"]])
     pred["Energy"] = model.predict(test[features])
     preds.append(pred)
-    quests["Energy"] = model.predict(quests[features])
+
+    quest_idx = (quests["Name"] == name)
+    quests.loc[quest_idx, "Energy"] = model.predict(quests.loc[quest_idx, features])
 preds = pd.concat(preds)
 
 #  Save in pickle
@@ -181,5 +206,7 @@ import pickle
 with open(lib.model_out_path, 'wb') as outp:
     for df in [hists, tests, preds, quests]:    
         pickle.dump(df, outp, protocol=pickle.HIGHEST_PROTOCOL)
+    # Also saves the Bayes objects
+    pickle.dump(bys, outp, protocol=pickle.HIGHEST_PROTOCOL)
 
 # %%
